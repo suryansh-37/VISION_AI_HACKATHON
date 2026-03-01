@@ -1,0 +1,1 @@
+const STREAM_CONFIG = { apiKey: '4eyd8p7644vp', token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoic3R1ZGVudF91c2VyIiwiZXhwIjoxNzcyNDU2MTg5fQ.AGCudaE0OEwn29LoXLHKHmfKMI9RSDAKWv1JDoRLXmM' };

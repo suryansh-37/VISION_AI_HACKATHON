@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Saarthi - The Code Buddy</title>
+
+    <!-- Tailwind CSS (CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#4285F4',
+                        secondary: '#34A853',
+                        surface: '#1E1E1E',
+                        background: '#121212',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- React 18 (CDN) -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+    <!-- Babel for in-browser JSX compilation -->
+    <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Stream Video React SDK -->
+    <script crossorigin src="https://unpkg.com/@stream-io/video-react-sdk@latest/dist/index.umd.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/@stream-io/video-react-sdk@latest/dist/css/styles.css" />
+
+    <!-- Import Python generated config -->
+    <script src="./config.js"></script>
+
+    <style>
+        body {
+            background-color: #121212;
+            color: #ffffff;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .editor textarea {
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        /* Vertex AI / Material UI inspired styles */
+        .glass-panel {
+            background: rgba(30, 30, 30, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .terminal-log {
+            margin: 0;
+            padding: 4px 0;
+            font-family: monospace;
+            font-size: 0.85rem;
+            border-bottom: 1px solid #333;
+        }
+
+        .log-error {
+            color: #ff5252;
+        }
+
+        .log-success {
+            color: #69f0ae;
+        }
+
+        .log-info {
+            color: #90caf9;
+        }
+
+        .custom-stream-theme {
+            --str-video__primary-color: #4285F4;
+            --str-video__surface-color: #1E1E1E;
+            --str-video__background-color: #121212;
+            --str-video__text-color: #ffffff;
+        }
+    </style>
+</head>
+
+<body class="h-screen w-screen flex flex-col bg-background">
+
+    <!-- Top Navbar -->
+    <header class="h-16 glass-panel flex items-center justify-between px-6 shadow-md z-10 shrink-0">
+        <div class="flex items-center gap-3">
+            <div
+                class="w-8 h-8 rounded-full bg-primary flex items-center justify-center font-bold text-white shadow-lg">
+                S</div>
+            <h1 class="text-xl font-semibold tracking-wide text-white">Saarthi <span
+                    class="text-sm font-light text-gray-400">| The Code Buddy</span></h1>
+        </div>
+        <div class="flex items-center gap-4">
+            <!-- Handled inside React call controls -->
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex overflow-hidden">
+        <!-- Left Panel: Code Editor & Terminal -->
+        <section class="w-1/2 flex flex-col border-r border-gray-800 glass-panel z-10">
+            <!-- Code Editor -->
+            <div class="flex-1 flex flex-col p-4 border-b border-gray-800">
+                <h2 class="text-sm font-medium text-gray-400 mb-2 uppercase tracking-wider">Workspace</h2>
+                <textarea
+                    class="flex-1 bg-black/50 text-green-400 p-4 rounded-lg resize-none focus:outline-none focus:ring-1 focus:ring-primary border border-gray-700 shadow-inner"
+                    placeholder="// Write your code here...&#10;// Saarthi will see your screen share and mentor you."></textarea>
+            </div>
+            <!-- Terminal -->
+            <div class="h-1/3 flex flex-col p-4 bg-black/80 shadow-inner overflow-hidden">
+                <h2 class="text-sm font-medium text-gray-400 mb-2 uppercase tracking-wider">Terminal Logs</h2>
+                <div id="terminalOutput" class="flex-1 overflow-y-auto pr-2 flex flex-col gap-1 text-gray-300">
+                    <p class="terminal-log log-info">[System] Initializing Saarthi Environment...</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Right Panel: Stream Video UI -->
+        <section class="w-1/2 relative bg-[#19232D] flex items-center justify-center overflow-hidden">
+            <div id="stream-root" class="w-full h-full relative"></div>
+        </section>
+    </main>
+
+    <script type="text/babel">
+        // Deconstruct StreamVideoReact
+        const { StreamVideo, StreamCall, SpeakerLayout, CallControls, StreamTheme, StreamVideoClient } = window.StreamVideoReact;
+
+        // Custom Terminal Logger
+        const terminalOutput = document.getElementById('terminalOutput');
+        const logToTerminal = (message, type = 'info') => {
+            const p = document.createElement('p');
+            p.className = `terminal-log log-${type}`;
+            const timestamp = new Date().toLocaleTimeString();
+            p.innerText = `[${timestamp}] ${message}`;
+            terminalOutput.appendChild(p);
+            terminalOutput.scrollTop = terminalOutput.scrollHeight;
+        };
+
+        // State to keep track of Stream elements
+        let globalCall = null;
+        let isScreenSharing = false;
+
+        async function init() {
+            try {
+                if (!window.STREAM_CONFIG || !window.STREAM_CONFIG.apiKey) {
+                    throw new Error("STREAM_CONFIG is missing or invalid. Make sure agent.py generated config.js successfully.");
+                }
+
+                logToTerminal('Initializing Stream Client...', 'info');
+
+                // Requirement: Use getOrCreateInstance instead of new keyword
+                const client = StreamVideoClient.getOrCreateInstance({
+                    apiKey: STREAM_CONFIG.apiKey,
+                    user: { id: "student_user", name: "Student", image: "https://getstream.io/random_svg/?id=student&name=Student" },
+                    token: STREAM_CONFIG.token
+                });
+
+                logToTerminal('Connecting to room: ai-tutor-room', 'info');
+                const call = client.call('default', 'ai-tutor-room');
+                await call.join({ create: true });
+
+                globalCall = call;
+                logToTerminal('Successfully connected to tutor room.', 'success');
+
+                // Render Stream UI
+                const App = () => {
+                    const [isSharing, setIsSharing] = React.useState(false);
+
+                    const toggleScreenShare = async () => {
+                        try {
+                            if (isSharing) {
+                                await call.screenShare.disable();
+                                setIsSharing(false);
+                                logToTerminal('Screen sharing stopped.', 'info');
+                            } else {
+                                await call.screenShare.enable();
+                                setIsSharing(true);
+                                logToTerminal('Screen sharing active.', 'success');
+                            }
+                        } catch (err) {
+                            console.error("Screen share error", err);
+                            logToTerminal(`Screen share failed: ${err.message}`, 'error');
+                            if (window.location.protocol === 'file:') {
+                                logToTerminal('CRITICAL ERROR: Browser security blocks screen sharing on file:/// URLs. Please host this file via localhost.', 'error');
+                            }
+                        }
+                    };
+
+                    return (
+                        <StreamVideo client={client}>
+                            <StreamCall call={call}>
+                                <StreamTheme className="h-full w-full custom-stream-theme flex flex-col relative">
+                                    <div className="flex-1 overflow-hidden relative">
+                                        <SpeakerLayout participantsBarPosition="bottom" />
+                                    </div>
+                                    <div className="absolute bottom-4 left-0 right-0 flex justify-center z-10 gap-4">
+                                        <button
+                                            onClick={toggleScreenShare}
+                                            className={`transition-colors text-white px-5 py-2 rounded-lg font-medium shadow flex items-center gap-2 ${isSharing ? 'bg-red-600 hover:bg-red-700' : 'bg-primary hover:bg-blue-600'}`}
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fillRule="evenodd" d="M3 5a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2h-2.22l.123.489.804.804A1 1 0 0113 18H7a1 1 0 01-.707-1.707l.804-.804L7.22 15H5a2 2 0 01-2-2V5zm5.771 7H5V5h10v7H8.771z" clipRule="evenodd" />
+                                            </svg>
+                                            <span>{isSharing ? "Stop Sharing" : "Share Screen"}</span>
+                                        </button>
+                                        <CallControls onLeave={() => logToTerminal('Call Left.', 'info')} />
+                                    </div>
+                                </StreamTheme>
+                            </StreamCall>
+                        </StreamVideo>
+                    );
+                };
+
+                const rootElement = document.getElementById('stream-root');
+                const root = ReactDOM.createRoot(rootElement);
+                root.render(<App />);
+
+            } catch (err) {
+                console.error(err);
+                logToTerminal(`Initialization Error: ${err.message}`, 'error');
+            }
+        }
+
+        // Run Initialization
+        window.addEventListener('DOMContentLoaded', () => {
+            init();
+        });
+    </script>
+</body>
+
+</html>
